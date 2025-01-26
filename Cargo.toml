@@ -3,7 +3,15 @@ name = "securafolder"
 version = "0.1.0"
 edition = "2024"
 
+build = "build.rs"
+
 [dependencies]
+argo = "0.1.0"
+argon2 = { version = "0.5.3", features = ["password-hash"] }
 chacha20poly1305 = "0.10.1"
 rand = "0.8.5"
+slint = "1.9.2"
 walkdir = "2.5.0"
+
+[build-dependencies]
+slint-build = "1.9.2"
