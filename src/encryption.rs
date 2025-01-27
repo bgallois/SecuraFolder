@@ -3,11 +3,15 @@ use chacha20poly1305::{
     ChaCha20Poly1305, Nonce,
     aead::{Aead, AeadCore, KeyInit, OsRng},
 };
-use rand::{Rng, distributions::Alphanumeric};
 use std::{
-    fs::{self, File, OpenOptions},
-    io::{Read, Write},
-    path::{Path, PathBuf},
+    fs::{OpenOptions},
+    io::Write,
+    path::PathBuf,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
+    thread,
 };
 use walkdir::WalkDir;
 
@@ -57,7 +61,7 @@ fn process_file(
     Ok(())
 }
 
-pub fn generate_key() -> (Nonce, ChaCha20Poly1305) {
+pub fn _generate_key() -> (Nonce, ChaCha20Poly1305) {
     let key = ChaCha20Poly1305::generate_key(&mut OsRng);
     let cipher = ChaCha20Poly1305::new(&key);
     let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
@@ -81,10 +85,35 @@ pub fn process_folder(
     nonce: Nonce,
     cipher: ChaCha20Poly1305,
     operation: Operation,
+    on_progress: impl Fn(usize, usize) + Send + 'static + Clone,
 ) -> Result<(), EncError> {
     let files = get_files(path)?;
-    for file in files {
-        process_file(file, nonce, cipher.clone(), operation)?
+
+    let nonce = Arc::new(Mutex::new(nonce));
+    let cipher = Arc::new(Mutex::new(cipher));
+    let progress = Arc::new(AtomicUsize::new(0));
+
+    let handles: Vec<_> = files
+        .clone()
+        .into_iter()
+        .map(|file| {
+            let progress = Arc::clone(&progress);
+            let nonce = Arc::clone(&nonce);
+            let cipher = Arc::clone(&cipher);
+            let on_progress = on_progress.clone();
+            let value = files.clone();
+            thread::spawn(move || {
+                let nonce = nonce.lock().unwrap();
+                let cipher = cipher.lock().unwrap();
+                let processed = progress.fetch_add(1, Ordering::SeqCst) + 1;
+                on_progress(processed, value.len());
+                process_file(file, *nonce, cipher.clone(), operation)
+            })
+        })
+        .collect();
+
+    for handle in handles {
+        handle.join().unwrap()?; // Handle the result or error
     }
     Ok(())
 }
@@ -126,6 +155,7 @@ fn test_encryption_decryption() {
         nonce,
         cipher.clone(),
         Operation::Encrypt,
+        |_, _| {},
     )
     .unwrap();
 
@@ -141,6 +171,7 @@ fn test_encryption_decryption() {
         nonce,
         cipher,
         Operation::Decrypt,
+        |_, _| {},
     )
     .unwrap();
 
@@ -175,6 +206,7 @@ fn test_password_encryption_decryption() {
         nonce,
         cipher.clone(),
         Operation::Encrypt,
+        |_, _| {},
     )
     .unwrap();
 
@@ -191,7 +223,8 @@ fn test_password_encryption_decryption() {
             format!("./{}", folder).into(),
             nonce,
             cipher,
-            Operation::Decrypt
+            Operation::Decrypt,
+            |_, _| {}
         )
         .unwrap_err(),
         EncError::Decode
@@ -203,6 +236,7 @@ fn test_password_encryption_decryption() {
         nonce,
         cipher,
         Operation::Decrypt,
+        |_, _| {},
     )
     .unwrap();
 
