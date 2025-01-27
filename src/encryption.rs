@@ -4,7 +4,7 @@ use chacha20poly1305::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
 };
 use std::{
-    fs::{OpenOptions},
+    fs::OpenOptions,
     io::Write,
     path::PathBuf,
     sync::{

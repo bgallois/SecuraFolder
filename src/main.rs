@@ -1,13 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::{
-    env,
-    error::Error,
-    fs,
-    path::PathBuf,
-    sync::mpsc,
-    thread,
-};
+use std::{env, error::Error, fs, path::PathBuf, sync::mpsc, thread};
 
 mod encryption;
 
@@ -37,7 +30,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                     Err(_) => ui.set_is_encrypted(is_encrypted),
                 }
             }
-            ui.set_lock(false);
         }
     });
 
@@ -107,6 +99,11 @@ fn encrypt(
             })
             .unwrap();
         }
+        slint::invoke_from_event_loop(move || {
+            if let Some(ui) = ui.upgrade() {
+                ui.set_lock(false);
+            }
+        })
     });
     Ok(())
 }
@@ -143,6 +140,12 @@ fn decrypt(
             })
             .unwrap();
         }
+
+        slint::invoke_from_event_loop(move || {
+            if let Some(ui) = ui.upgrade() {
+                ui.set_lock(false);
+            }
+        })
     });
     Ok(())
 }

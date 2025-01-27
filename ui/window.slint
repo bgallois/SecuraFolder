@@ -5,6 +5,10 @@ export component AppWindow inherits Window {
     height: 300px;
     title: "SecuraFolder";
 
+    in property <image> lock_image: @image-url("assets/lock.png");
+    in property <image> unlock_image: @image-url("assets/unlock.png");
+    in property <image> help_image: @image-url("assets/help.png");
+
     in-out property <string> pass: "";
     in-out property <bool> is_encrypted: true;
     in-out property <bool> lock: false;
@@ -18,26 +22,48 @@ export component AppWindow inherits Window {
        }
     }
 
-        close_alert := PopupWindow {
-            Rectangle {
-                height: 100%;
-                width: 100%;
-                background: #ff4d4d;
-                border-radius: 10px;
-            }
-            VerticalBox {
-                width: 100%;
-                height: 100%;
-                padding: 20px;
-
-                Text {
-                    text: "You need to encrypt the folder before quitting!";
-                    font-size: 16px;
-                    color: #333333;
-                }
-            }
-            x: 20px; y: 20px; height: 20px; width: 30px; close-policy:close-on-click-outside;
+    close_alert := PopupWindow {
+        Rectangle {
+            height: 100%;
+            width: 100%;
+            background: #ff4d4d;
+            border-radius: 10px;
         }
+        VerticalBox {
+            width: 100%;
+            height: 100%;
+            padding: 20px;
+
+            Text {
+                text: "You need to encrypt the folder before quitting!";
+                font-size: 16px;
+                color: #333333;
+            }
+        }
+        x: 20px; y: 20px; height: 20px; width: 30px; close-policy:close-on-click;
+    }
+
+    help_popup := PopupWindow {
+        Rectangle {
+            height: 100%;
+            width: 100%;
+            background: #eeeeee;
+            border-radius: 10px;
+        }
+        VerticalBox {
+            width: 100%;
+            height: 100%;
+            padding: 20px;
+
+            Text {
+                text: "Usage Instructions:\n\n- Place the 3 executables on the media you want to add a SecuraFolder on.\n- Open the app using the correct executable for the system you are on.\n- The application will create a Secura folder automatically.\n- Place the files you want to encrypt inside this folder.\n- When you are finished, click the encrypt button before closing the app.\n- When you want to access the files or add a new file open the application and use the Decrypt button.";
+                font-size: 14px;
+                color: #333333;
+                wrap: word-wrap;
+            }
+        }
+        x: 50px; y: 50px; height: 250px; width: 400px; close-policy:close-on-click;
+    }
 
     VerticalBox {
         spacing: 15px;
@@ -45,10 +71,17 @@ export component AppWindow inherits Window {
 
         HorizontalBox {
             height: 50px;
+            width: 100%;
             alignment: center;
             Text {
                 text: "SecuraFolder";
-                font-size: 18px;
+                font-size: 22px;
+            }
+             Button {
+                icon: root.help_image;
+                clicked => {
+                    help_popup.show(); // Show the help popup when clicked
+                }
             }
         }
 
@@ -85,12 +118,13 @@ export component AppWindow inherits Window {
                     color: black;
                 }
             }
-            x: 20px; y: 20px; height: 50px; width: 50px; close-policy:close-on-click-outside;
+            x: 20px; y: 20px; height: 50px; width: 50px; close-policy:close-on-click;
         }
 
         Button {
             primary: !root.is_encrypted;
-            enabled: !lock;
+            enabled: !root.lock;
+            icon: root.is_encrypted ? root.lock_image : root.unlock_image;
             text: root.is_encrypted ? "Currently Encrypted | Start Decryption" : "Currently Decrypted | Start Encryption";
             clicked => {
                 if (pass_component.text == conf_component.text) {
