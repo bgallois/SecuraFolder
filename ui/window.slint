@@ -6,7 +6,7 @@ export component AppWindow inherits Window {
     title: "SecuraFolder";
 
     in-out property <string> pass: "";
-    in-out property <bool> is_encrypting: true;
+    in-out property <bool> is_encrypted: true;
     in-out property <float> progress: 0.0;
     callback submit();
 
@@ -59,18 +59,17 @@ export component AppWindow inherits Window {
         }
 
         Button {
-            text: "Currently Decrypted | Start Encryption";
             checkable: true;
+            checked: !is_encrypted;
+            text: is_encrypted ? "Currently Encrypted | Start Decryption" : "Currently Decrypted | Start Encryption";
             clicked => {
                 if (pass_component.text == conf_component.text) {
                     root.pass = pass_component.text;
                     if (self.checked) {
-                        self.text = "Currently Encrypted | Start Decryption";
-                        root.is_encrypting = true;
+                        root.is_encrypted = false;
                     }
                     else {
-                        self.text = "Currently Decrypted | Start Encryption" ;
-                        root.is_encrypting = false;
+                        root.is_encrypted = true;
                     }
                     root.submit();
                 }
