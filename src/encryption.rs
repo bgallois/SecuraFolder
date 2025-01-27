@@ -26,7 +26,7 @@ pub enum Operation {
     Decrypt,
 }
 
-fn get_files(folder: String) -> Result<Vec<PathBuf>, EncError> {
+fn get_files(folder: PathBuf) -> Result<Vec<PathBuf>, EncError> {
     let mut file_paths = Vec::new();
     for entry in WalkDir::new(folder) {
         let entry = entry.map_err(|_| EncError::Read)?;
@@ -77,7 +77,7 @@ pub fn new_key(password: &str) -> Result<(Nonce, ChaCha20Poly1305), EncError> {
 }
 
 pub fn process_folder(
-    path: String,
+    path: PathBuf,
     nonce: Nonce,
     cipher: ChaCha20Poly1305,
     operation: Operation,
@@ -122,7 +122,7 @@ fn test_encryption_decryption() {
     }
 
     process_folder(
-        format!("./{}", folder),
+        format!("./{}", folder).into(),
         nonce,
         cipher.clone(),
         Operation::Encrypt,
@@ -136,7 +136,13 @@ fn test_encryption_decryption() {
     }
     assert_ne!(originals, encrypteds);
 
-    process_folder(format!("./{}", folder), nonce, cipher, Operation::Decrypt).unwrap();
+    process_folder(
+        format!("./{}", folder).into(),
+        nonce,
+        cipher,
+        Operation::Decrypt,
+    )
+    .unwrap();
 
     let mut decrypteds = Vec::new();
     for i in 0..10 {
@@ -165,7 +171,7 @@ fn test_password_encryption_decryption() {
 
     let (nonce, cipher) = new_key("test").unwrap();
     process_folder(
-        format!("./{}", folder),
+        format!("./{}", folder).into(),
         nonce,
         cipher.clone(),
         Operation::Encrypt,
@@ -181,12 +187,24 @@ fn test_password_encryption_decryption() {
 
     let (nonce, cipher) = new_key("test2").unwrap();
     assert_eq!(
-        process_folder(format!("./{}", folder), nonce, cipher, Operation::Decrypt).unwrap_err(),
+        process_folder(
+            format!("./{}", folder).into(),
+            nonce,
+            cipher,
+            Operation::Decrypt
+        )
+        .unwrap_err(),
         EncError::Decode
     );
 
     let (nonce, cipher) = new_key("test").unwrap();
-    process_folder(format!("./{}", folder), nonce, cipher, Operation::Decrypt).unwrap();
+    process_folder(
+        format!("./{}", folder).into(),
+        nonce,
+        cipher,
+        Operation::Decrypt,
+    )
+    .unwrap();
 
     let mut decrypteds = Vec::new();
     for i in 0..10 {

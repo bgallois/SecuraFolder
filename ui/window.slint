@@ -7,8 +7,37 @@ export component AppWindow inherits Window {
 
     in-out property <string> pass: "";
     in-out property <bool> is_encrypted: true;
+    in-out property <bool> lock: false;
     in-out property <float> progress: 0.0;
     callback submit();
+
+    callback close-requested;
+    close-requested => {
+       if (!root.is_encrypted) {
+            close_alert.show();
+       }
+    }
+
+        close_alert := PopupWindow {
+            Rectangle {
+                height: 100%;
+                width: 100%;
+                background: #ff4d4d;
+                border-radius: 10px;
+            }
+            VerticalBox {
+                width: 100%;
+                height: 100%;
+                padding: 20px;
+
+                Text {
+                    text: "You need to encrypt the folder before quitting!";
+                    font-size: 16px;
+                    color: #333333;
+                }
+            }
+            x: 20px; y: 20px; height: 20px; width: 30px; close-policy:close-on-click-outside;
+        }
 
     VerticalBox {
         spacing: 15px;
@@ -43,7 +72,8 @@ export component AppWindow inherits Window {
             Rectangle {
                 height: 100%;
                 width: 100%;
-                background: red;
+                background: #ff4d4d;
+                border-radius: 10px;
             }
             VerticalBox {
                 width: 100%;
@@ -59,23 +89,17 @@ export component AppWindow inherits Window {
         }
 
         Button {
-            checkable: true;
-            checked: !is_encrypted;
-            text: is_encrypted ? "Currently Encrypted | Start Decryption" : "Currently Decrypted | Start Encryption";
+            primary: !root.is_encrypted;
+            enabled: !lock;
+            text: root.is_encrypted ? "Currently Encrypted | Start Decryption" : "Currently Decrypted | Start Encryption";
             clicked => {
                 if (pass_component.text == conf_component.text) {
                     root.pass = pass_component.text;
-                    if (self.checked) {
-                        root.is_encrypted = false;
-                    }
-                    else {
-                        root.is_encrypted = true;
-                    }
+                    root.lock = true;
                     root.submit();
                 }
                 else {
-                    self.checked = !self.checked;
-                    popup.show()
+                    popup.show();
                 }
             }
         }
