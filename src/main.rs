@@ -20,12 +20,22 @@ fn main() -> Result<(), Box<dyn Error>> {
             let password = ui.get_pass();
             let is_encrypted = ui.get_is_encrypted();
             if !is_encrypted {
-                match encrypt(ui.as_weak(), path.clone(), &password) {
+                match process(
+                    ui.as_weak(),
+                    path.clone(),
+                    &password,
+                    encryption::Operation::Encrypt,
+                ) {
                     Ok(()) => ui.set_is_encrypted(!is_encrypted),
                     Err(_) => ui.set_is_encrypted(is_encrypted),
                 }
             } else {
-                match decrypt(ui.as_weak(), path.clone(), &password) {
+                match process(
+                    ui.as_weak(),
+                    path.clone(),
+                    &password,
+                    encryption::Operation::Decrypt,
+                ) {
                     Ok(()) => ui.set_is_encrypted(!is_encrypted),
                     Err(_) => ui.set_is_encrypted(is_encrypted),
                 }
@@ -67,66 +77,20 @@ fn init(ui: &AppWindow, path: PathBuf) -> Result<(), Box<dyn Error>> {
     }
 }
 
-fn encrypt(
+fn process(
     ui: slint::Weak<AppWindow>,
     path: PathBuf,
     password: &str,
+    operation: encryption::Operation,
 ) -> Result<(), Box<dyn Error>> {
     let (nonce, cipher) = encryption::new_key(password).map_err(|_| "Error")?;
     let (tx, rx) = mpsc::channel();
 
     thread::spawn(move || {
-        encryption::process_folder(
-            path,
-            nonce,
-            cipher,
-            encryption::Operation::Encrypt,
-            move |i, total| {
-                tx.send((i, total)).expect("Failed to send progress");
-            },
-        )
-    });
-
-    thread::spawn(move || {
-        for (i, total) in rx {
-            let ui_clone = ui.clone();
-            let progress = i as f32 / total as f32;
-
-            slint::invoke_from_event_loop(move || {
-                if let Some(ui) = ui_clone.upgrade() {
-                    ui.set_progress(1f32 - progress);
-                }
-            })
-            .unwrap();
-        }
-        slint::invoke_from_event_loop(move || {
-            if let Some(ui) = ui.upgrade() {
-                ui.set_lock(false);
-            }
+        encryption::process_folder(path, nonce, cipher, operation, move |i, total| {
+            tx.send((i, total)).expect("Failed to send progress");
         })
     });
-    Ok(())
-}
-
-fn decrypt(
-    ui: slint::Weak<AppWindow>,
-    path: PathBuf,
-    password: &str,
-) -> Result<(), Box<dyn Error>> {
-    let (nonce, cipher) = encryption::new_key(password).map_err(|_| "Error")?;
-    let (tx, rx) = mpsc::channel();
-
-    thread::spawn(move || {
-        encryption::process_folder(
-            path,
-            nonce,
-            cipher,
-            encryption::Operation::Decrypt,
-            move |i, total| {
-                tx.send((i, total)).expect("Failed to send progress");
-            },
-        )
-    });
 
     thread::spawn(move || {
         for (i, total) in rx {
@@ -135,12 +99,14 @@ fn decrypt(
 
             slint::invoke_from_event_loop(move || {
                 if let Some(ui) = ui_clone.upgrade() {
-                    ui.set_progress(progress);
+                    match operation {
+                        encryption::Operation::Encrypt => ui.set_progress(1f32 - progress),
+                        encryption::Operation::Decrypt => ui.set_progress(progress),
+                    }
                 }
             })
             .unwrap();
         }
-
         slint::invoke_from_event_loop(move || {
             if let Some(ui) = ui.upgrade() {
                 ui.set_lock(false);
