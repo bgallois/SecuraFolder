@@ -9,11 +9,18 @@ export component AppWindow inherits Window {
     in property <image> unlock_image: @image-url("assets/unlock.png");
     in property <image> help_image: @image-url("assets/help.png");
 
-    in-out property <string> pass: "";
+    out property <string> pass: "";
     in-out property <bool> is_encrypted: true;
+    property <string> popup_text: "";
     in-out property <bool> lock: false;
-    in-out property <float> progress: 0.0;
+    in property <float> progress: 0.0;
+
     callback submit();
+
+    public function msg(text: string) {
+        root.popup_text = text;
+        popup.show();
+    }
 
     callback close-requested;
     close-requested => {
@@ -80,7 +87,7 @@ export component AppWindow inherits Window {
              Button {
                 icon: root.help_image;
                 clicked => {
-                    help_popup.show(); // Show the help popup when clicked
+                    help_popup.show();
                 }
             }
         }
@@ -113,7 +120,7 @@ export component AppWindow inherits Window {
                 height: 100%;
 
                 Text {
-                    text: "The two passwords didn't match, please retry";
+                    text: root.popup_text;
                     font-size: 16px;
                     color: black;
                 }
@@ -133,6 +140,7 @@ export component AppWindow inherits Window {
                     root.submit();
                 }
                 else {
+                    root.popup_text = "The two passwords didn't match, please retry";
                     popup.show();
                 }
             }

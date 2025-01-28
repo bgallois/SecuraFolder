@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use fs_extra::dir::get_size;
 use std::{env, error::Error, fs, path::PathBuf, sync::mpsc, thread};
 
 mod encryption;
@@ -83,13 +84,25 @@ fn process(
     password: &str,
     operation: encryption::Operation,
 ) -> Result<(), Box<dyn Error>> {
+    #[cfg(feature = "limited")]
+    if get_size(&path).unwrap() > 5_242_880 {
+        let ui = ui.unwrap();
+        ui.set_lock(false);
+        ui.invoke_msg(
+            "Folder size exceeds the limit of 5MiB bytes included with the free version.".into(),
+        );
+        return Err("NotDecodable".into());
+    }
+
     let (nonce, cipher) = encryption::new_key(password).map_err(|_| "Error")?;
     let (tx, rx) = mpsc::channel();
 
     if operation == encryption::Operation::Decrypt
         && !encryption::check_decodable(path.clone(), nonce, cipher.clone())
     {
-        ui.unwrap().set_lock(false);
+        let ui = ui.unwrap();
+        ui.set_lock(false);
+        ui.invoke_msg("Incorrect password or unencrypted Secura folder (see the user manual).".into());
         return Err("NotDecodable".into());
     }
 
