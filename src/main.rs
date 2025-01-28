@@ -86,10 +86,17 @@ fn process(
     let (nonce, cipher) = encryption::new_key(password).map_err(|_| "Error")?;
     let (tx, rx) = mpsc::channel();
 
+    if operation == encryption::Operation::Decrypt
+        && !encryption::check_decodable(path.clone(), nonce, cipher.clone())
+    {
+        ui.unwrap().set_lock(false);
+        return Err("NotDecodable".into());
+    }
+
     thread::spawn(move || {
-        encryption::process_folder(path, nonce, cipher, operation, move |i, total| {
+        let _ = encryption::process_folder(path, nonce, cipher, operation, move |i, total| {
             tx.send((i, total)).expect("Failed to send progress");
-        })
+        });
     });
 
     thread::spawn(move || {
@@ -104,8 +111,7 @@ fn process(
                         encryption::Operation::Decrypt => ui.set_progress(progress),
                     }
                 }
-            })
-            .unwrap();
+            })?;
         }
         slint::invoke_from_event_loop(move || {
             if let Some(ui) = ui.upgrade() {
@@ -113,5 +119,6 @@ fn process(
             }
         })
     });
+
     Ok(())
 }

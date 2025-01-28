@@ -27,7 +27,7 @@ pub enum EncError {
     Key,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Operation {
     Encrypt,
     Decrypt,
@@ -64,6 +64,22 @@ fn process_file(
         file.write_all(&ciphertext).map_err(|_| EncError::Write)?;
     }
     Ok(())
+}
+
+pub fn check_decodable(path: PathBuf, nonce: Nonce, cipher: ChaCha20Poly1305) -> bool {
+    let files = get_files(path);
+    if let Ok(files) = files {
+        if !files.is_empty() {
+            let mut rng = rand::thread_rng();
+            let random_index = rng.gen_range(0..files.len());
+            let file = &files[random_index];
+            process_file(file.clone(), nonce, cipher, Operation::Decrypt).is_ok()
+        } else {
+            false
+        }
+    } else {
+        false
+    }
 }
 
 pub fn generate_key() -> (Nonce, ChaCha20Poly1305) {
