@@ -102,7 +102,9 @@ fn process(
     {
         let ui = ui.unwrap();
         ui.set_lock(false);
-        ui.invoke_msg("Incorrect password or unencrypted Secura folder (see the user manual).".into());
+        ui.invoke_msg(
+            "Incorrect password or unencrypted Secura folder (see the user manual).".into(),
+        );
         return Err("NotDecodable".into());
     }
 
