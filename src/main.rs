@@ -4,6 +4,7 @@ use fs_extra::dir::get_size;
 use std::{env, error::Error, fs, path::PathBuf, sync::mpsc, thread};
 
 mod encryption;
+mod license;
 
 slint::include_modules!();
 fn main() -> Result<(), Box<dyn Error>> {
