@@ -1,6 +1,7 @@
+pub use license_key::Status;
 use license_key::*;
 
-struct Hasher;
+pub struct Hasher;
 impl KeyHasher for Hasher {
     fn hash(&self, seed: u64, a: u64, b: u64, c: u64) -> u8 {
         let mut hasher = blake3::Hasher::new();
@@ -18,14 +19,14 @@ impl Default for Hasher {
     }
 }
 
-trait LicenseManager<T> {
+pub trait LicenseManager<T> {
     fn new(iteration: u8) -> Self;
     fn block(&mut self, key: &str);
     fn verify(&self, key: &str) -> Status;
     fn generate(&self, mail: &str) -> String;
 }
 
-struct Manager<T: KeyHasher> {
+pub struct Manager<T: KeyHasher> {
     verifier: Verifier<T>,
     generator: Generator<T>,
 }
@@ -33,13 +34,27 @@ impl<T: KeyHasher + std::default::Default> LicenseManager<T> for Manager<T> {
     fn new(iteration: u8) -> Self {
         let verifier: Verifier<T> = Verifier::new(T::default(), vec![
             // Change this to discontinu forged keys
-            ByteCheck::new(iteration, (114, 83, 170)),
+            ByteCheck::new(iteration, (245, 219, 84)),
         ]);
         let generator = Generator::new(T::default(), vec![
-            (114, 83, 170),
-            (60, 208, 27),
-            (69, 14, 202),
-            (61, 232, 54),
+            (245, 219, 84),
+            (98, 194, 187),
+            (170, 200, 59),
+            (251, 246, 210),
+            (191, 239, 39),
+            (193, 229, 29),
+            (151, 118, 212),
+            (36, 64, 65),
+            (200, 251, 55),
+            (5, 243, 215),
+            (169, 241, 157),
+            (243, 195, 145),
+            (236, 118, 159),
+            (198, 29, 231),
+            (84, 176, 172),
+            (195, 170, 60),
+            (66, 44, 59),
+            (254, 111, 79),
         ]);
         Self {
             verifier,
@@ -56,7 +71,7 @@ impl<T: KeyHasher + std::default::Default> LicenseManager<T> for Manager<T> {
     }
 
     fn verify(&self, key: &str) -> Status {
-        let key = LicenseKey::parse::<HexFormat>(&key);
+        let key = LicenseKey::parse::<HexFormat>(key);
         self.verifier.verify(&key)
     }
 

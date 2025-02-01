@@ -5,8 +5,11 @@ edition = "2024"
 
 build = "build.rs"
 
+default-run = "securafolder"
+
 [features]
 limited = []
+default = ["limited"]
 
 [dependencies]
 argo = "0.1.0"

@@ -15,8 +15,13 @@ use std::{
 };
 use walkdir::WalkDir;
 
-use rand::{Rng, distributions::Alphanumeric};
-use std::{fs, fs::File, time::Duration};
+use rand::Rng;
+
+#[cfg(test)]
+mod tests {
+    use rand::{Rng, distributions::Alphanumeric};
+    use std::{fs, fs::File, time::Duration};
+}
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum EncError {

@@ -1,10 +1,18 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use fs_extra::dir::get_size;
+use license::LicenseManager;
 use std::{env, error::Error, fs, path::PathBuf, sync::mpsc, thread};
 
-mod encryption;
-mod license;
+#[cfg(test)]
+mod tests {
+    use rand::{Rng, distributions::Alphanumeric};
+    use std::{fs::File, io::Write};
+}
+
+use securafolder::{encryption, license};
+
+const SIZE: u64 = 5_242_880;
 
 slint::include_modules!();
 fn main() -> Result<(), Box<dyn Error>> {
@@ -86,13 +94,25 @@ fn process(
     operation: encryption::Operation,
 ) -> Result<(), Box<dyn Error>> {
     #[cfg(feature = "limited")]
-    if get_size(&path).unwrap() > 5_242_880 {
+    if get_size(&path).unwrap() > SIZE {
         let ui = ui.unwrap();
         ui.set_lock(false);
-        ui.invoke_msg(
-            "Folder size exceeds the limit of 5MiB bytes included with the free version.".into(),
-        );
-        return Err("NotDecodable".into());
+        if let Ok(key) = fs::read_to_string(path.parent().unwrap().join("key.txt")) {
+            let manager = license::Manager::<license::Hasher>::new(0);
+            println!("OKOKO{:?}", manager.verify(&key));
+            match manager.verify(&key) {
+                license::Status::Valid => (),
+                _ => {
+                    ui.invoke_msg("Invalid license".into());
+                    return Err("NotDecodable".into());
+                }
+            }
+        } else {
+            ui.invoke_msg(
+    "The folder size exceeds the 5 MiB limit included with the free version. To unlock larger folder support, please place a valid 'key.txt' file in the same folder as the executable.".into(),
+);
+            return Err("NotDecodable".into());
+        }
     }
 
     let (nonce, cipher) = encryption::new_key(password).map_err(|_| "Error")?;
@@ -136,5 +156,84 @@ fn process(
         })
     });
 
+    Ok(())
+}
+
+// One test due to set_platform error.
+#[test]
+fn test_limit() -> Result<(), Box<dyn std::error::Error>> {
+    let path: String = rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(10)
+        .map(char::from)
+        .collect();
+    let ui = AppWindow::new()?;
+    init(&ui, path.clone().into())?;
+    let mut rng = rand::thread_rng();
+    let data: Vec<u8> = (0..SIZE).map(|_| rng.r#gen()).collect();
+
+    let mut file = File::create(format!("./{}/SecuraFolder", path))?;
+    file.write_all(&data)?;
+
+    assert!(
+        process(
+            ui.as_weak(),
+            format!("./{}/SecuraFolder", path).into(),
+            "test",
+            encryption::Operation::Encrypt
+        )
+        .is_ok()
+    );
+
+    fs::remove_dir_all(format!("./{}/", path)).unwrap();
+
+    let path: String = rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(10)
+        .map(char::from)
+        .collect();
+    let ui = AppWindow::new()?; // Good in one test but fail if recall in another
+    init(&ui, path.clone().into())?;
+    let mut rng = rand::thread_rng();
+    let data: Vec<u8> = (0..SIZE + 1).map(|_| rng.r#gen()).collect();
+
+    let mut file = File::create(format!("./{}/SecuraFolder", path))?;
+    file.write_all(&data)?;
+
+    assert!(
+        process(
+            ui.as_weak(),
+            format!("./{}/SecuraFolder", path).into(),
+            "test",
+            encryption::Operation::Encrypt
+        )
+        .is_err()
+    );
+
+    let mut file = File::create(format!("./{}/key.txt", path))?;
+    file.write_all("b2b0db5a1b7d6b7352f27e83e4f12b00274a71e61ac5e59958dd05".as_bytes())?;
+    assert!(
+        process(
+            ui.as_weak(),
+            format!("./{}/SecuraFolder", path).into(),
+            "test",
+            encryption::Operation::Encrypt
+        )
+        .is_err()
+    );
+
+    let mut file = File::create(format!("./{}/key.txt", path))?;
+    file.write_all("b2b0db5a1b7d6b7352f27e83e4f9712b00274a71e61ac5e59958dd05".as_bytes())?;
+    assert!(
+        process(
+            ui.as_weak(),
+            format!("./{}/SecuraFolder", path).into(),
+            "test",
+            encryption::Operation::Encrypt
+        )
+        .is_ok()
+    );
+
+    fs::remove_dir_all(format!("./{}/", path)).unwrap();
     Ok(())
 }
