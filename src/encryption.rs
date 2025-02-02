@@ -17,12 +17,6 @@ use walkdir::WalkDir;
 
 use rand::Rng;
 
-#[cfg(test)]
-mod tests {
-    use rand::{Rng, distributions::Alphanumeric};
-    use std::{fs, fs::File, time::Duration};
-}
-
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum EncError {
     Read,
@@ -145,307 +139,314 @@ pub fn process_folder(
 }
 
 #[cfg(test)]
-fn generate_dummy_file(file_path: &str, size: usize) -> Result<(), EncError> {
-    let folder = file_path
-        .split('/')
-        .filter(|part| *part != ".")
-        .next()
+mod tests {
+    use super::*;
+    use rand::{Rng, distributions::Alphanumeric};
+    use std::{fs, fs::File, time::Duration};
+
+    #[cfg(test)]
+    fn generate_dummy_file(file_path: &str, size: usize) -> Result<(), EncError> {
+        let folder = file_path
+            .split('/')
+            .filter(|part| *part != ".")
+            .next()
+            .unwrap();
+        fs::create_dir_all(format!("./{}", folder)).map_err(|_| EncError::Write)?;
+        let mut rng = rand::thread_rng();
+        let data: Vec<u8> = (0..size).map(|_| rng.r#gen()).collect();
+
+        let mut file = File::create(file_path).map_err(|_| EncError::Write)?;
+        file.write_all(&data).map_err(|_| EncError::Write)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_encryption_decryption() {
+        let folder: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(10)
+            .map(char::from)
+            .collect();
+        let (nonce, cipher) = generate_key();
+
+        let mut originals = Vec::new();
+        for i in 0..10 {
+            let name = &format!("./{}/{}", folder, i).to_owned();
+            generate_dummy_file(name, 15).unwrap();
+            originals.push(std::fs::read(name).unwrap());
+        }
+
+        process_folder(
+            format!("./{}", folder).into(),
+            nonce,
+            cipher.clone(),
+            Operation::Encrypt,
+            |_, _| {},
+        )
         .unwrap();
-    fs::create_dir_all(format!("./{}", folder)).map_err(|_| EncError::Write)?;
-    let mut rng = rand::thread_rng();
-    let data: Vec<u8> = (0..size).map(|_| rng.r#gen()).collect();
 
-    let mut file = File::create(file_path).map_err(|_| EncError::Write)?;
-    file.write_all(&data).map_err(|_| EncError::Write)?;
-    Ok(())
-}
+        let mut encrypteds = Vec::new();
+        for i in 0..10 {
+            let name = &format!("./{}/{}", folder, i).to_owned();
+            encrypteds.push(std::fs::read(name).unwrap());
+        }
+        assert_ne!(originals, encrypteds);
 
-#[test]
-fn test_encryption_decryption() {
-    let folder: String = rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(10)
-        .map(char::from)
-        .collect();
-    let (nonce, cipher) = generate_key();
-
-    let mut originals = Vec::new();
-    for i in 0..10 {
-        let name = &format!("./{}/{}", folder, i).to_owned();
-        generate_dummy_file(name, 15).unwrap();
-        originals.push(std::fs::read(name).unwrap());
-    }
-
-    process_folder(
-        format!("./{}", folder).into(),
-        nonce,
-        cipher.clone(),
-        Operation::Encrypt,
-        |_, _| {},
-    )
-    .unwrap();
-
-    let mut encrypteds = Vec::new();
-    for i in 0..10 {
-        let name = &format!("./{}/{}", folder, i).to_owned();
-        encrypteds.push(std::fs::read(name).unwrap());
-    }
-    assert_ne!(originals, encrypteds);
-
-    process_folder(
-        format!("./{}", folder).into(),
-        nonce,
-        cipher,
-        Operation::Decrypt,
-        |_, _| {},
-    )
-    .unwrap();
-
-    let mut decrypteds = Vec::new();
-    for i in 0..10 {
-        let name = &format!("./{}/{}", folder, i).to_owned();
-        decrypteds.push(std::fs::read(name).unwrap());
-    }
-    assert_eq!(originals, decrypteds);
-
-    fs::remove_dir_all(format!("./{}/", folder)).unwrap();
-}
-
-#[test]
-fn test_password_encryption_decryption() {
-    let folder: String = rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(10)
-        .map(char::from)
-        .collect();
-
-    let mut originals = Vec::new();
-    for i in 0..10 {
-        let name = &format!("./{}/{}", folder, i).to_owned();
-        generate_dummy_file(name, 15).unwrap();
-        originals.push(std::fs::read(name).unwrap());
-    }
-
-    let (nonce, cipher) = new_key("test").unwrap();
-    process_folder(
-        format!("./{}", folder).into(),
-        nonce,
-        cipher.clone(),
-        Operation::Encrypt,
-        |_, _| {},
-    )
-    .unwrap();
-
-    let mut encrypteds = Vec::new();
-    for i in 0..10 {
-        let name = &format!("./{}/{}", folder, i).to_owned();
-        encrypteds.push(std::fs::read(name).unwrap());
-    }
-    assert_ne!(originals, encrypteds);
-
-    let (nonce, cipher) = new_key("test2").unwrap();
-    assert_eq!(
         process_folder(
             format!("./{}", folder).into(),
             nonce,
             cipher,
             Operation::Decrypt,
-            |_, _| {}
+            |_, _| {},
         )
-        .unwrap_err(),
-        EncError::Decode
-    );
+        .unwrap();
 
-    let (nonce, cipher) = new_key("test").unwrap();
-    process_folder(
-        format!("./{}", folder).into(),
-        nonce,
-        cipher,
-        Operation::Decrypt,
-        |_, _| {},
-    )
-    .unwrap();
+        let mut decrypteds = Vec::new();
+        for i in 0..10 {
+            let name = &format!("./{}/{}", folder, i).to_owned();
+            decrypteds.push(std::fs::read(name).unwrap());
+        }
+        assert_eq!(originals, decrypteds);
 
-    let mut decrypteds = Vec::new();
-    for i in 0..10 {
-        let name = &format!("./{}/{}", folder, i).to_owned();
-        decrypteds.push(std::fs::read(name).unwrap());
-    }
-    assert_eq!(originals, decrypteds);
-
-    fs::remove_dir_all(format!("./{}/", folder)).unwrap();
-}
-
-#[test]
-fn test_folder_already_encrypted() {
-    let folder: String = rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(10)
-        .map(char::from)
-        .collect();
-
-    let mut originals = Vec::new();
-    for i in 0..10 {
-        let name = &format!("./{}/{}", folder, i).to_owned();
-        generate_dummy_file(name, 15).unwrap();
-        originals.push(std::fs::read(name).unwrap());
+        fs::remove_dir_all(format!("./{}/", folder)).unwrap();
     }
 
-    let (nonce, cipher) = new_key("test").unwrap();
-    process_folder(
-        format!("./{}", folder).into(),
-        nonce,
-        cipher.clone(),
-        Operation::Encrypt,
-        |_, _| {},
-    )
-    .unwrap();
+    #[test]
+    fn test_password_encryption_decryption() {
+        let folder: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(10)
+            .map(char::from)
+            .collect();
 
-    let mut encrypteds = Vec::new();
-    for i in 0..10 {
-        let name = &format!("./{}/{}", folder, i).to_owned();
-        encrypteds.push(std::fs::read(name).unwrap());
-    }
-    assert_ne!(originals, encrypteds);
+        let mut originals = Vec::new();
+        for i in 0..10 {
+            let name = &format!("./{}/{}", folder, i).to_owned();
+            generate_dummy_file(name, 15).unwrap();
+            originals.push(std::fs::read(name).unwrap());
+        }
 
-    let (nonce, cipher) = new_key("test2").unwrap();
-    process_folder(
-        format!("./{}", folder).into(),
-        nonce,
-        cipher.clone(),
-        Operation::Encrypt,
-        |_, _| {},
-    )
-    .unwrap();
+        let (nonce, cipher) = new_key("test").unwrap();
+        process_folder(
+            format!("./{}", folder).into(),
+            nonce,
+            cipher.clone(),
+            Operation::Encrypt,
+            |_, _| {},
+        )
+        .unwrap();
 
-    let (nonce, cipher) = new_key("test2").unwrap();
-    process_folder(
-        format!("./{}", folder).into(),
-        nonce,
-        cipher.clone(),
-        Operation::Decrypt,
-        |_, _| {},
-    )
-    .unwrap();
+        let mut encrypteds = Vec::new();
+        for i in 0..10 {
+            let name = &format!("./{}/{}", folder, i).to_owned();
+            encrypteds.push(std::fs::read(name).unwrap());
+        }
+        assert_ne!(originals, encrypteds);
 
-    let (nonce, cipher) = new_key("test").unwrap();
-    process_folder(
-        format!("./{}", folder).into(),
-        nonce,
-        cipher,
-        Operation::Decrypt,
-        |_, _| {},
-    )
-    .unwrap();
+        let (nonce, cipher) = new_key("test2").unwrap();
+        assert_eq!(
+            process_folder(
+                format!("./{}", folder).into(),
+                nonce,
+                cipher,
+                Operation::Decrypt,
+                |_, _| {}
+            )
+            .unwrap_err(),
+            EncError::Decode
+        );
 
-    let mut decrypteds = Vec::new();
-    for i in 0..10 {
-        let name = &format!("./{}/{}", folder, i).to_owned();
-        decrypteds.push(std::fs::read(name).unwrap());
-    }
-    assert_eq!(originals, decrypteds);
+        let (nonce, cipher) = new_key("test").unwrap();
+        process_folder(
+            format!("./{}", folder).into(),
+            nonce,
+            cipher,
+            Operation::Decrypt,
+            |_, _| {},
+        )
+        .unwrap();
 
-    fs::remove_dir_all(format!("./{}/", folder)).unwrap();
-}
+        let mut decrypteds = Vec::new();
+        for i in 0..10 {
+            let name = &format!("./{}/{}", folder, i).to_owned();
+            decrypteds.push(std::fs::read(name).unwrap());
+        }
+        assert_eq!(originals, decrypteds);
 
-#[test]
-fn test_folder_already_decrypted() {
-    let folder: String = rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(10)
-        .map(char::from)
-        .collect();
-
-    let mut originals = Vec::new();
-    for i in 0..10 {
-        let name = &format!("./{}/{}", folder, i).to_owned();
-        generate_dummy_file(name, 15).unwrap();
-        originals.push(std::fs::read(name).unwrap());
+        fs::remove_dir_all(format!("./{}/", folder)).unwrap();
     }
 
-    let (nonce, cipher) = new_key("test").unwrap();
-    assert_eq!(
+    #[test]
+    fn test_folder_already_encrypted() {
+        let folder: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(10)
+            .map(char::from)
+            .collect();
+
+        let mut originals = Vec::new();
+        for i in 0..10 {
+            let name = &format!("./{}/{}", folder, i).to_owned();
+            generate_dummy_file(name, 15).unwrap();
+            originals.push(std::fs::read(name).unwrap());
+        }
+
+        let (nonce, cipher) = new_key("test").unwrap();
+        process_folder(
+            format!("./{}", folder).into(),
+            nonce,
+            cipher.clone(),
+            Operation::Encrypt,
+            |_, _| {},
+        )
+        .unwrap();
+
+        let mut encrypteds = Vec::new();
+        for i in 0..10 {
+            let name = &format!("./{}/{}", folder, i).to_owned();
+            encrypteds.push(std::fs::read(name).unwrap());
+        }
+        assert_ne!(originals, encrypteds);
+
+        let (nonce, cipher) = new_key("test2").unwrap();
+        process_folder(
+            format!("./{}", folder).into(),
+            nonce,
+            cipher.clone(),
+            Operation::Encrypt,
+            |_, _| {},
+        )
+        .unwrap();
+
+        let (nonce, cipher) = new_key("test2").unwrap();
         process_folder(
             format!("./{}", folder).into(),
             nonce,
             cipher.clone(),
             Operation::Decrypt,
             |_, _| {},
-        ),
-        Err(EncError::Decode)
-    );
+        )
+        .unwrap();
 
-    let mut decrypteds = Vec::new();
-    for i in 0..10 {
-        let name = &format!("./{}/{}", folder, i).to_owned();
-        decrypteds.push(std::fs::read(name).unwrap());
-    }
-    assert_eq!(originals, decrypteds);
-
-    fs::remove_dir_all(format!("./{}/", folder)).unwrap();
-}
-
-#[test]
-fn test_folder_modified_during_exec() {
-    let folder: String = rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(10)
-        .map(char::from)
-        .collect();
-
-    let mut originals = Vec::new();
-    for i in 0..1_000 {
-        let name = &format!("./{}/{}", folder, i).to_owned();
-        generate_dummy_file(name, 15).unwrap();
-        originals.push(std::fs::read(name).unwrap());
-    }
-
-    let (nonce_0, cipher_0) = new_key("test").unwrap();
-    let folder_clone = folder.clone();
-    let thread1 = thread::spawn(move || {
+        let (nonce, cipher) = new_key("test").unwrap();
         process_folder(
-            format!("./{}", folder_clone).into(),
-            nonce_0,
-            cipher_0,
-            Operation::Encrypt,
+            format!("./{}", folder).into(),
+            nonce,
+            cipher,
+            Operation::Decrypt,
             |_, _| {},
         )
         .unwrap();
-    });
 
-    let folder_clone = folder.clone();
-    let thread2 = thread::spawn(move || {
-        thread::sleep(Duration::from_millis(50));
-        fs::remove_file(&format!("./{}/{}", folder_clone, 999)).unwrap();
-    });
+        let mut decrypteds = Vec::new();
+        for i in 0..10 {
+            let name = &format!("./{}/{}", folder, i).to_owned();
+            decrypteds.push(std::fs::read(name).unwrap());
+        }
+        assert_eq!(originals, decrypteds);
 
-    thread1.join().unwrap();
-    thread2.join().unwrap();
-
-    let mut encrypteds = Vec::new();
-    for i in 0..999 {
-        let name = &format!("./{}/{}", folder, i).to_owned();
-        encrypteds.push(std::fs::read(name).unwrap());
+        fs::remove_dir_all(format!("./{}/", folder)).unwrap();
     }
-    assert_ne!(originals, encrypteds);
 
-    let (nonce, cipher) = new_key("test").unwrap();
-    let folder_clone = folder.clone();
-    process_folder(
-        format!("./{}", folder_clone).into(),
-        nonce,
-        cipher.clone(),
-        Operation::Decrypt,
-        |_, _| {},
-    )
-    .unwrap();
+    #[test]
+    fn test_folder_already_decrypted() {
+        let folder: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(10)
+            .map(char::from)
+            .collect();
 
-    let mut decrypteds = Vec::new();
-    for i in 0..999 {
-        let name = &format!("./{}/{}", folder, i).to_owned();
-        decrypteds.push(std::fs::read(name).unwrap());
+        let mut originals = Vec::new();
+        for i in 0..10 {
+            let name = &format!("./{}/{}", folder, i).to_owned();
+            generate_dummy_file(name, 15).unwrap();
+            originals.push(std::fs::read(name).unwrap());
+        }
+
+        let (nonce, cipher) = new_key("test").unwrap();
+        assert_eq!(
+            process_folder(
+                format!("./{}", folder).into(),
+                nonce,
+                cipher.clone(),
+                Operation::Decrypt,
+                |_, _| {},
+            ),
+            Err(EncError::Decode)
+        );
+
+        let mut decrypteds = Vec::new();
+        for i in 0..10 {
+            let name = &format!("./{}/{}", folder, i).to_owned();
+            decrypteds.push(std::fs::read(name).unwrap());
+        }
+        assert_eq!(originals, decrypteds);
+
+        fs::remove_dir_all(format!("./{}/", folder)).unwrap();
     }
-    assert_eq!(originals[0..originals.len() - 1], decrypteds);
 
-    fs::remove_dir_all(format!("./{}/", folder)).unwrap();
+    #[test]
+    fn test_folder_modified_during_exec() {
+        let folder: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(10)
+            .map(char::from)
+            .collect();
+
+        let mut originals = Vec::new();
+        for i in 0..1_000 {
+            let name = &format!("./{}/{}", folder, i).to_owned();
+            generate_dummy_file(name, 15).unwrap();
+            originals.push(std::fs::read(name).unwrap());
+        }
+
+        let (nonce_0, cipher_0) = new_key("test").unwrap();
+        let folder_clone = folder.clone();
+        let thread1 = thread::spawn(move || {
+            process_folder(
+                format!("./{}", folder_clone).into(),
+                nonce_0,
+                cipher_0,
+                Operation::Encrypt,
+                |_, _| {},
+            )
+            .unwrap();
+        });
+
+        let folder_clone = folder.clone();
+        let thread2 = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(50));
+            fs::remove_file(&format!("./{}/{}", folder_clone, 999)).unwrap();
+        });
+
+        thread1.join().unwrap();
+        thread2.join().unwrap();
+
+        let mut encrypteds = Vec::new();
+        for i in 0..999 {
+            let name = &format!("./{}/{}", folder, i).to_owned();
+            encrypteds.push(std::fs::read(name).unwrap());
+        }
+        assert_ne!(originals, encrypteds);
+
+        let (nonce, cipher) = new_key("test").unwrap();
+        let folder_clone = folder.clone();
+        process_folder(
+            format!("./{}", folder_clone).into(),
+            nonce,
+            cipher.clone(),
+            Operation::Decrypt,
+            |_, _| {},
+        )
+        .unwrap();
+
+        let mut decrypteds = Vec::new();
+        for i in 0..999 {
+            let name = &format!("./{}/{}", folder, i).to_owned();
+            decrypteds.push(std::fs::read(name).unwrap());
+        }
+        assert_eq!(originals[0..originals.len() - 1], decrypteds);
+
+        fs::remove_dir_all(format!("./{}/", folder)).unwrap();
+    }
 }

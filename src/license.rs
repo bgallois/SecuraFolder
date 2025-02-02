@@ -71,7 +71,11 @@ impl<T: KeyHasher + std::default::Default> LicenseManager<T> for Manager<T> {
     }
 
     fn verify(&self, key: &str) -> Status {
-        let key = LicenseKey::parse::<HexFormat>(key);
+        let key = LicenseKey::parse::<HexFormat>(
+            &key.chars()
+                .filter(|i| i.is_ascii_hexdigit())
+                .collect::<String>(),
+        );
         self.verifier.verify(&key)
     }
 
@@ -95,7 +99,6 @@ fn test_generation_verification() {
 #[test]
 fn test_invalid() {
     let manager = Manager::<Hasher>::new(0);
-    let key = manager.generate("test@test.fr");
     assert_eq!(
         manager.verify("14549b21366db0aa219d1302d0b7"),
         Status::Invalid
