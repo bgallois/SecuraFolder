@@ -134,7 +134,7 @@ export component AppWindow inherits Window {
             icon: root.is_encrypted ? root.lock_image : root.unlock_image;
             text: root.is_encrypted ? "Currently Encrypted | Start Decryption" : "Currently Decrypted | Start Encryption";
             clicked => {
-                if (pass_component.text == conf_component.text) {
+                if (pass_component.text == conf_component.text && pass_component.text != "") {
                     root.pass = pass_component.text;
                     root.lock = true;
                     root.submit();
