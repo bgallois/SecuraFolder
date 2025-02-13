@@ -3,6 +3,7 @@ use chacha20poly1305::{
     ChaCha20Poly1305, Nonce,
     aead::{Aead, AeadCore, KeyInit, OsRng},
 };
+use rand::Rng;
 use std::{
     fs::OpenOptions,
     io::Write,
@@ -11,11 +12,9 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
-    thread,
 };
+use threadpool::ThreadPool;
 use walkdir::WalkDir;
-
-use rand::Rng;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum EncError {
@@ -112,37 +111,43 @@ pub fn process_folder(
     let nonce = Arc::new(Mutex::new(nonce));
     let cipher = Arc::new(Mutex::new(cipher));
     let progress = Arc::new(AtomicUsize::new(0));
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let pool = ThreadPool::new(16);
 
-    let handles: Vec<_> = files
-        .clone()
-        .into_iter()
-        .map(|file| {
-            let progress = Arc::clone(&progress);
-            let nonce = Arc::clone(&nonce);
-            let cipher = Arc::clone(&cipher);
-            let on_progress = on_progress.clone();
-            let value = files.clone();
-            thread::spawn(move || {
-                let nonce = nonce.lock().unwrap();
-                let cipher = cipher.lock().unwrap();
-                let processed = progress.fetch_add(1, Ordering::SeqCst) + 1;
-                on_progress(processed, value.len());
-                process_file(file, *nonce, cipher.clone(), operation)
-            })
-        })
-        .collect();
+    files.iter().cloned().for_each(|file| {
+        let progress = Arc::clone(&progress);
+        let nonce = Arc::clone(&nonce);
+        let cipher = Arc::clone(&cipher);
+        let on_progress = on_progress.clone();
+        let errors = errors.clone();
+        let value = files.clone();
 
-    for handle in handles {
-        handle.join().unwrap()?;
-    }
-    Ok(())
+        pool.execute(move || {
+            let nonce = nonce.lock().unwrap();
+            let cipher = cipher.lock().unwrap();
+            let processed = progress.fetch_add(1, Ordering::SeqCst) + 1;
+            on_progress(processed, value.len());
+            errors
+                .lock()
+                .unwrap()
+                .push(process_file(file, *nonce, cipher.clone(), operation));
+        });
+    });
+
+    pool.join();
+    errors
+        .lock()
+        .unwrap()
+        .iter()
+        .find_map(|e| e.err())
+        .map_or(Ok(()), Err)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use rand::{Rng, distributions::Alphanumeric};
-    use std::{fs, fs::File, time::Duration};
+    use std::{fs, fs::File, thread, time::Duration};
 
     #[cfg(test)]
     fn generate_dummy_file(file_path: &str, size: usize) -> Result<(), EncError> {

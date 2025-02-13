@@ -2,7 +2,14 @@
 
 use fs_extra::dir::get_size;
 use license::LicenseManager;
-use std::{env, error::Error, fs, path::PathBuf, sync::mpsc, thread};
+use std::{
+    env,
+    error::Error,
+    fs,
+    path::{Path, PathBuf},
+    sync::mpsc,
+    thread,
+};
 
 use securafolder::{encryption, license};
 
@@ -88,10 +95,14 @@ fn process(
     operation: encryption::Operation,
 ) -> Result<(), Box<dyn Error>> {
     #[cfg(feature = "limited")]
-    if get_size(&path).unwrap() > SIZE {
+    if get_size(&path)? > SIZE {
         let ui = ui.unwrap();
         ui.set_lock(false);
-        if let Ok(key) = fs::read_to_string(path.parent().unwrap().join("key.txt")) {
+        if let Ok(key) = fs::read_to_string(
+            path.parent()
+                .unwrap_or_else(|| Path::new(""))
+                .join("key.txt"),
+        ) {
             let manager = license::Manager::<license::Hasher>::new(0);
             match manager.verify(&key) {
                 license::Status::Valid => (),
