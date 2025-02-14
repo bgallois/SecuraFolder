@@ -28,5 +28,5 @@ walkdir = "2.5.0"
 slint-build = "1.9.2"
 winres = "0.1.12"
 
-[package.metadata.bundle.bin.duniter-node-manager]
-icon = ["ui/assets/SecuraFolder.webp"]
+[package.metadata.bundle.bin.securafolder]
+icon = ["ui/assets/SecuraFolder.ico"]

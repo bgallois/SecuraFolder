@@ -26,10 +26,20 @@ const SIZE: u64 = 5_242_880;
 slint::include_modules!();
 fn main() -> Result<(), Box<dyn Error>> {
     let ui = AppWindow::new()?;
-    let path = env::current_exe()?
+    let mut path = env::current_exe()?
         .parent()
         .ok_or("Failed to get the parent directory")?
-        .join("Secura");
+        .to_path_buf();
+    if cfg!(target_os = "macos") {
+        // On macos bundle the executable is hidden inside the bundle
+        for _ in 0..3 {
+            path = path
+                .parent()
+                .ok_or("Failed to get the parent directory")?
+                .to_path_buf();
+        }
+    }
+    path = path.join("Secura");
     init(&ui, path.clone())?;
 
     ui.on_submit({
