@@ -31,6 +31,13 @@ pub enum Operation {
     Decrypt,
 }
 
+/// Retrieves all file paths from a given folder.
+///
+/// # Arguments
+/// * `folder` - A `PathBuf` representing the folder to search.
+///
+/// # Returns
+/// * `Result<Vec<PathBuf>, EncError>` - A list of file paths if successful, otherwise an error.
 fn get_files(folder: PathBuf) -> Result<Vec<PathBuf>, EncError> {
     let mut file_paths = Vec::new();
     for entry in WalkDir::new(folder) {
@@ -44,34 +51,48 @@ fn get_files(folder: PathBuf) -> Result<Vec<PathBuf>, EncError> {
 
 fn process_file(
     file_path: PathBuf,
-    nonce: Nonce,
     cipher: ChaCha20Poly1305,
     operation: Operation,
 ) -> Result<(), EncError> {
     let f = std::fs::read(&file_path);
+    // Unreadable files are skipped
     if let Ok(f) = f {
-        let ciphertext = match operation {
-            Operation::Encrypt => cipher.encrypt(&nonce, &*f).map_err(|_| EncError::Encode)?,
-            Operation::Decrypt => cipher.decrypt(&nonce, &*f).map_err(|_| EncError::Decode)?,
+        let (nonce, ciphertext) = match operation {
+            Operation::Encrypt => {
+                let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
+                let text = cipher.encrypt(&nonce, &*f).map_err(|_| EncError::Encode)?;
+                (Some(nonce), text)
+            }
+
+            Operation::Decrypt => {
+                let nonce = Nonce::from_slice(&f[..12]);
+                let text = cipher
+                    .decrypt(nonce, &f[12..])
+                    .map_err(|_| EncError::Decode)?;
+                (None, text)
+            }
         };
         let mut file = OpenOptions::new()
             .write(true)
             .truncate(true)
             .open(file_path)
             .map_err(|_| EncError::Write)?;
-        file.write_all(&ciphertext).map_err(|_| EncError::Write)?;
+        if let Some(nonce) = nonce {
+            file.write_all(&nonce).map_err(|_| EncError::Write)?;
+        }
+        file.write_all(&ciphertext).map_err(|_| EncError::Write)?
     }
     Ok(())
 }
 
-pub fn check_decodable(path: PathBuf, nonce: Nonce, cipher: ChaCha20Poly1305) -> bool {
+pub fn check_decodable(path: PathBuf, cipher: ChaCha20Poly1305) -> bool {
     let files = get_files(path);
     if let Ok(files) = files {
         if !files.is_empty() {
             let mut rng = rand::thread_rng();
             let random_index = rng.gen_range(0..files.len());
             let file = &files[random_index];
-            process_file(file.clone(), nonce, cipher, Operation::Decrypt).is_ok()
+            process_file(file.clone(), cipher, Operation::Decrypt).is_ok()
         } else {
             false
         }
@@ -80,35 +101,32 @@ pub fn check_decodable(path: PathBuf, nonce: Nonce, cipher: ChaCha20Poly1305) ->
     }
 }
 
-pub fn generate_key() -> (Nonce, ChaCha20Poly1305) {
+pub fn generate_key() -> ChaCha20Poly1305 {
     let key = ChaCha20Poly1305::generate_key(&mut OsRng);
-    let cipher = ChaCha20Poly1305::new(&key);
-    let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
-    (nonce, cipher)
+    ChaCha20Poly1305::new(&key)
 }
 
-pub fn new_key(password: &str) -> Result<(Nonce, ChaCha20Poly1305), EncError> {
+pub fn new_key(password: &str) -> Result<ChaCha20Poly1305, EncError> {
     let salt = argon2::password_hash::Salt::from_b64("azertyazerty").map_err(|_| EncError::Key)?;
     let argon2 = argon2::Argon2::default();
     let key = argon2
         .hash_password(password.as_bytes(), salt)
         .map_err(|_| EncError::Key)?;
-    let cipher = ChaCha20Poly1305::new_from_slice(key.hash.unwrap().as_bytes())
+    let cipher = ChaCha20Poly1305::new_from_slice(key.hash.ok_or(EncError::Key)?.as_bytes())
         .map_err(|_| EncError::Key)?;
-    let nonce = chacha20poly1305::aead::generic_array::GenericArray::from_slice(&[0u8; 12]);
-    Ok((*nonce, cipher))
+    Ok(cipher)
 }
 
+// Choose to panic if a mutex is poisoned as there is not recovery possible at
+// this stage.
 pub fn process_folder(
     path: PathBuf,
-    nonce: Nonce,
     cipher: ChaCha20Poly1305,
     operation: Operation,
     on_progress: impl Fn(usize, usize) + Send + 'static + Clone,
 ) -> Result<(), EncError> {
     let files = get_files(path)?;
 
-    let nonce = Arc::new(Mutex::new(nonce));
     let cipher = Arc::new(Mutex::new(cipher));
     let progress = Arc::new(AtomicUsize::new(0));
     let errors = Arc::new(Mutex::new(Vec::new()));
@@ -116,21 +134,19 @@ pub fn process_folder(
 
     files.iter().cloned().for_each(|file| {
         let progress = Arc::clone(&progress);
-        let nonce = Arc::clone(&nonce);
         let cipher = Arc::clone(&cipher);
         let on_progress = on_progress.clone();
         let errors = errors.clone();
         let value = files.clone();
 
         pool.execute(move || {
-            let nonce = nonce.lock().unwrap();
             let cipher = cipher.lock().unwrap();
             let processed = progress.fetch_add(1, Ordering::SeqCst) + 1;
             on_progress(processed, value.len());
             errors
                 .lock()
                 .unwrap()
-                .push(process_file(file, *nonce, cipher.clone(), operation));
+                .push(process_file(file, cipher.clone(), operation));
         });
     });
 
@@ -172,7 +188,7 @@ mod tests {
             .take(10)
             .map(char::from)
             .collect();
-        let (nonce, cipher) = generate_key();
+        let cipher = generate_key();
 
         let mut originals = Vec::new();
         for i in 0..10 {
@@ -183,7 +199,6 @@ mod tests {
 
         process_folder(
             format!("./{}", folder).into(),
-            nonce,
             cipher.clone(),
             Operation::Encrypt,
             |_, _| {},
@@ -199,7 +214,6 @@ mod tests {
 
         process_folder(
             format!("./{}", folder).into(),
-            nonce,
             cipher,
             Operation::Decrypt,
             |_, _| {},
@@ -231,10 +245,9 @@ mod tests {
             originals.push(std::fs::read(name).unwrap());
         }
 
-        let (nonce, cipher) = new_key("test").unwrap();
+        let cipher = new_key("test").unwrap();
         process_folder(
             format!("./{}", folder).into(),
-            nonce,
             cipher.clone(),
             Operation::Encrypt,
             |_, _| {},
@@ -248,11 +261,10 @@ mod tests {
         }
         assert_ne!(originals, encrypteds);
 
-        let (nonce, cipher) = new_key("test2").unwrap();
+        let cipher = new_key("test2").unwrap();
         assert_eq!(
             process_folder(
                 format!("./{}", folder).into(),
-                nonce,
                 cipher,
                 Operation::Decrypt,
                 |_, _| {}
@@ -261,10 +273,9 @@ mod tests {
             EncError::Decode
         );
 
-        let (nonce, cipher) = new_key("test").unwrap();
+        let cipher = new_key("test").unwrap();
         process_folder(
             format!("./{}", folder).into(),
-            nonce,
             cipher,
             Operation::Decrypt,
             |_, _| {},
@@ -296,10 +307,9 @@ mod tests {
             originals.push(std::fs::read(name).unwrap());
         }
 
-        let (nonce, cipher) = new_key("test").unwrap();
+        let cipher = new_key("test").unwrap();
         process_folder(
             format!("./{}", folder).into(),
-            nonce,
             cipher.clone(),
             Operation::Encrypt,
             |_, _| {},
@@ -313,30 +323,27 @@ mod tests {
         }
         assert_ne!(originals, encrypteds);
 
-        let (nonce, cipher) = new_key("test2").unwrap();
+        let cipher = new_key("test2").unwrap();
         process_folder(
             format!("./{}", folder).into(),
-            nonce,
             cipher.clone(),
             Operation::Encrypt,
             |_, _| {},
         )
         .unwrap();
 
-        let (nonce, cipher) = new_key("test2").unwrap();
+        let cipher = new_key("test2").unwrap();
         process_folder(
             format!("./{}", folder).into(),
-            nonce,
             cipher.clone(),
             Operation::Decrypt,
             |_, _| {},
         )
         .unwrap();
 
-        let (nonce, cipher) = new_key("test").unwrap();
+        let cipher = new_key("test").unwrap();
         process_folder(
             format!("./{}", folder).into(),
-            nonce,
             cipher,
             Operation::Decrypt,
             |_, _| {},
@@ -368,11 +375,10 @@ mod tests {
             originals.push(std::fs::read(name).unwrap());
         }
 
-        let (nonce, cipher) = new_key("test").unwrap();
+        let cipher = new_key("test").unwrap();
         assert_eq!(
             process_folder(
                 format!("./{}", folder).into(),
-                nonce,
                 cipher.clone(),
                 Operation::Decrypt,
                 |_, _| {},
@@ -405,12 +411,11 @@ mod tests {
             originals.push(std::fs::read(name).unwrap());
         }
 
-        let (nonce_0, cipher_0) = new_key("test").unwrap();
+        let cipher_0 = new_key("test").unwrap();
         let folder_clone = folder.clone();
         let thread1 = thread::spawn(move || {
             process_folder(
                 format!("./{}", folder_clone).into(),
-                nonce_0,
                 cipher_0,
                 Operation::Encrypt,
                 |_, _| {},
@@ -434,11 +439,10 @@ mod tests {
         }
         assert_ne!(originals, encrypteds);
 
-        let (nonce, cipher) = new_key("test").unwrap();
+        let cipher = new_key("test").unwrap();
         let folder_clone = folder.clone();
         process_folder(
             format!("./{}", folder_clone).into(),
-            nonce,
             cipher.clone(),
             Operation::Decrypt,
             |_, _| {},

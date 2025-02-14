@@ -1,18 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use fs_extra::dir::get_size;
-use license::LicenseManager;
-use std::{
-    env,
-    error::Error,
-    fs,
-    path::{Path, PathBuf},
-    sync::mpsc,
-    thread,
-};
+use securafolder::encryption;
+use std::{env, error::Error, fs, path::PathBuf, sync::mpsc, thread};
+#[cfg(feature = "limited")]
+use {fs_extra::dir::get_size, license::LicenseManager, securafolder::license, std::path::Path};
 
-use securafolder::{encryption, license};
-
+#[cfg(feature = "limited")]
 const SIZE: u64 = 5_242_880;
 
 slint::include_modules!();
@@ -119,11 +112,11 @@ fn process(
         }
     }
 
-    let (nonce, cipher) = encryption::new_key(password).map_err(|_| "Error")?;
+    let cipher = encryption::new_key(password).map_err(|_| "Error")?;
     let (tx, rx) = mpsc::channel();
 
     if operation == encryption::Operation::Decrypt
-        && !encryption::check_decodable(path.clone(), nonce, cipher.clone())
+        && !encryption::check_decodable(path.clone(), cipher.clone())
     {
         let ui = ui.unwrap();
         ui.set_lock(false);
@@ -134,7 +127,7 @@ fn process(
     }
 
     thread::spawn(move || {
-        let _ = encryption::process_folder(path, nonce, cipher, operation, move |i, total| {
+        let _ = encryption::process_folder(path, cipher, operation, move |i, total| {
             tx.send((i, total)).expect("Failed to send progress");
         });
     });
