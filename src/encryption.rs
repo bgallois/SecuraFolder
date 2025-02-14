@@ -1,9 +1,22 @@
+/// A module for file encryption and decryption using the ChaCha20-Poly1305 cipher.
+///
+/// This module provides functionality for processing files in a directory, including:
+/// - Encrypting or decrypting files using a password-based key or a randomly generated key.
+/// - Checking whether a directory's files can be successfully decrypted.
+/// - Generating new encryption keys based on a password or random generation.
+///
+/// # Key Features
+/// - File Processing: It can encrypt and decrypt files in a given folder, updating the files with the appropriate cipher data.
+/// - Parallel Processing: It uses a thread pool to handle file processing concurrently, speeding up the operations on large numbers of files.
+/// - Password-Based Encryption: Supports key generation from a password using the Argon2 algorithm.
+///
 use argon2::PasswordHasher;
 use chacha20poly1305::{
     ChaCha20Poly1305, Nonce,
     aead::{Aead, AeadCore, KeyInit, OsRng},
 };
 use rand::Rng;
+use sha2::{Digest, Sha256};
 use std::{
     fs::OpenOptions,
     io::Write,
@@ -16,6 +29,14 @@ use std::{
 use threadpool::ThreadPool;
 use walkdir::WalkDir;
 
+/// Enumeration representing various types of errors that can occur during file encryption or decryption.
+///
+/// # Variants
+/// - `Read`: An error occurred while reading a file.
+/// - `Write`: An error occurred while writing to a file.
+/// - `Encode`: An error occurred while encoding data (e.g., encryption failure).
+/// - `Decode`: An error occurred while decoding data (e.g., decryption failure).
+/// - `Key`: An error occurred while handling or generating a cryptographic key.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum EncError {
     Read,
@@ -25,6 +46,11 @@ pub enum EncError {
     Key,
 }
 
+/// Enumeration representing the two possible operations for file processing: encryption and decryption.
+///
+/// # Variants
+/// - `Encrypt`: The operation will encrypt the file.
+/// - `Decrypt`: The operation will decrypt the file.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Operation {
     Encrypt,
@@ -33,11 +59,15 @@ pub enum Operation {
 
 /// Retrieves all file paths from a given folder.
 ///
+/// This function recursively walks through a given folder and collects all file paths,
+/// returning them in a `Vec<PathBuf>`.
+///
 /// # Arguments
-/// * `folder` - A `PathBuf` representing the folder to search.
+/// * `folder` - A `PathBuf` representing the folder to search for files.
 ///
 /// # Returns
-/// * `Result<Vec<PathBuf>, EncError>` - A list of file paths if successful, otherwise an error.
+/// * `Result<Vec<PathBuf>, EncError>` - A `Vec<PathBuf>` containing the paths of all found files if successful,
+///   otherwise an `EncError::Read` if reading the directory fails.
 fn get_files(folder: PathBuf) -> Result<Vec<PathBuf>, EncError> {
     let mut file_paths = Vec::new();
     for entry in WalkDir::new(folder) {
@@ -49,6 +79,20 @@ fn get_files(folder: PathBuf) -> Result<Vec<PathBuf>, EncError> {
     Ok(file_paths)
 }
 
+/// Processes a file (either encrypts or decrypts it).
+///
+/// This function reads a file, encrypts or decrypts it based on the `operation` parameter,
+/// and writes the resulting ciphertext or plaintext back to the file. If encryption is performed,
+/// a nonce is prepended to the file content. If decryption is performed, it expects the nonce
+/// to be present at the beginning of the file and removes it before decrypting.
+///
+/// # Arguments
+/// * `file_path` - A `PathBuf` representing the file to process.
+/// * `cipher` - A `ChaCha20Poly1305` cipher to use for the encryption or decryption.
+/// * `operation` - The operation to perform (`Encrypt` or `Decrypt`).
+///
+/// # Returns
+/// * `Result<(), EncError>` - `Ok(())` if the operation completes successfully, or an error variant if a failure occurs during reading, writing, encoding, or decoding.
 fn process_file(
     file_path: PathBuf,
     cipher: ChaCha20Poly1305,
@@ -85,6 +129,18 @@ fn process_file(
     Ok(())
 }
 
+// Checks if any file in the given directory is decodable.
+///
+/// This function retrieves all files in a given folder and attempts to decrypt a random file
+/// from the folder to check if the files are decodable using the provided cipher. It is useful
+/// for determining if a folder of files can be decrypted with the current key.
+///
+/// # Arguments
+/// * `path` - A `PathBuf` representing the folder containing files to check.
+/// * `cipher` - A `ChaCha20Poly1305` cipher used to attempt decryption of the files.
+///
+/// # Returns
+/// * `bool` - `true` if at least one file can be decrypted successfully, `false` otherwise.
 pub fn check_decodable(path: PathBuf, cipher: ChaCha20Poly1305) -> bool {
     let files = get_files(path);
     if let Ok(files) = files {
@@ -101,13 +157,34 @@ pub fn check_decodable(path: PathBuf, cipher: ChaCha20Poly1305) -> bool {
     }
 }
 
+/// Generates a random key for ChaCha20-Poly1305 encryption.
+///
+/// This function generates a random 256-bit key using the `OsRng` random number generator
+/// and returns a `ChaCha20Poly1305` cipher initialized with the generated key. It is useful
+/// for creating a new encryption key without requiring a password.
+///
+/// # Returns
+/// * `ChaCha20Poly1305` - A ChaCha20-Poly1305 cipher initialized with the generated random key.
 pub fn generate_key() -> ChaCha20Poly1305 {
     let key = ChaCha20Poly1305::generate_key(&mut OsRng);
     ChaCha20Poly1305::new(&key)
 }
 
+/// Generates a key for ChaCha20-Poly1305 encryption from a password.
+///
+/// This function uses the Argon2 password hashing algorithm to derive a key from the provided password.
+/// The password is hashed with a fixed salt, and the resulting key is used to initialize
+/// a `ChaCha20Poly1305` cipher for encryption or decryption operations.
+///
+/// # Arguments
+/// * `password` - A `&str` containing the password to derive the key from.
+///
+/// # Returns
+/// * `Result<ChaCha20Poly1305, EncError>` - A `ChaCha20Poly1305` cipher initialized with the derived key if successful,
+///   or an `EncError::Key` if the key generation fails.
 pub fn new_key(password: &str) -> Result<ChaCha20Poly1305, EncError> {
-    let salt = argon2::password_hash::Salt::from_b64("azertyazerty").map_err(|_| EncError::Key)?;
+    let salt = generate_salt(password);
+    let salt = argon2::password_hash::Salt::from_b64(&salt).map_err(|_| EncError::Key)?;
     let argon2 = argon2::Argon2::default();
     let key = argon2
         .hash_password(password.as_bytes(), salt)
@@ -117,8 +194,42 @@ pub fn new_key(password: &str) -> Result<ChaCha20Poly1305, EncError> {
     Ok(cipher)
 }
 
-// Choose to panic if a mutex is poisoned as there is not recovery possible at
-// this stage.
+/// Generates a salt derived from the provided password.
+///
+/// This function uses the SHA-256 hashing algorithm to generate a salt for cryptographic use.
+/// It combines the provided password with a fixed string ("secura_folder") to ensure a unique,
+/// deterministic salt for the given password. The resulting salt is returned as a hexadecimal string.
+///
+/// # Arguments
+/// * `password` - A string slice (`&str`) representing the user's password, which is used to generate the salt.
+///
+/// # Returns
+/// * `String` - A hexadecimal representation of the generated salt, which can be used in cryptographic operations
+///   like key derivation.
+fn generate_salt(password: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(password.as_bytes());
+    hasher.update(b"secura_folder");
+    let salt = hasher.finalize();
+    hex::encode(salt)
+}
+
+/// Processes all files in a folder (either encrypts or decrypts them).
+///
+/// This function retrieves all files from a specified folder and processes them concurrently using
+/// a thread pool. Each file is either encrypted or decrypted based on the provided operation. The
+/// function also tracks and reports the progress of the operation using the `on_progress` callback.
+/// This function choose to panic if a mutex is poisoned as there is not recovery possible at this stage.
+/// TODO: keep a list of encoded/decoded files and backtrack if poisonous Mutex.
+///
+/// # Arguments
+/// * `path` - A `PathBuf` representing the folder containing files to process.
+/// * `cipher` - A `ChaCha20Poly1305` cipher to use for the encryption or decryption of the files.
+/// * `operation` - The operation to perform (`Encrypt` or `Decrypt`).
+/// * `on_progress` - A callback function that is called with the progress of the operation (processed files, total files).
+///
+/// # Returns
+/// * `Result<(), EncError>` - `Ok(())` if the operation completes successfully, or an error variant if a failure occurs during any part of the file processing.
 pub fn process_folder(
     path: PathBuf,
     cipher: ChaCha20Poly1305,
