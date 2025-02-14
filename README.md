@@ -3,7 +3,7 @@
 ## Overview
 SecuraFolder is a portable encryption tool that enables you to securely store your files on any computer without the need for installation. It’s ideal for use with USB flash drives and other portable storage devices, providing the ability to protect and access your sensitive files wherever you go.
 
-![Sample Image](./ui/assets/preview_0.png) ![Sample Image](./ui/assets/preview_1.png)
+![Sample Image](./ui/assets/preview.gif)
 
 ## Getting Started
 
