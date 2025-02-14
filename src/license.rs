@@ -1,3 +1,17 @@
+/// This module provides functionality for generating and verifying license keys.
+///
+/// It defines a custom `LicenseManager` trait and an implementation that allows for
+/// generating, verifying, and blocking license keys using a custom `Hasher`.
+/// The `Manager` struct integrates the generation and verification processes, utilizing
+/// the `Verifier` and `Generator` structs internally. The keys are based on the user's
+/// email address, with the hash function ensuring uniqueness for each license key.
+///
+/// # Key Concepts
+/// - **Hasher**: A custom hash function used to process input data and create a unique key.
+/// - **LicenseManager**: A trait that handles the creation, verification, and blocking of license keys.
+/// - **Manager**: The struct that implements `LicenseManager`, combining the functionality of the `Verifier`
+///   and `Generator` for key validation and generation.
+///
 pub use license_key::Status;
 use license_key::*;
 

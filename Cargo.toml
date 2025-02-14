@@ -12,7 +12,6 @@ limited = []
 default = ["limited"]
 
 [dependencies]
-argo = "0.1.0"
 argon2 = { version = "0.5.3", features = ["password-hash"] }
 blake3 = "1.5.5"
 chacha20poly1305 = "0.10.1"

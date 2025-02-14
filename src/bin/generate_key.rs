@@ -1,6 +1,16 @@
-use securafolder::license;
-
 use license::LicenseManager;
+/// This program generates a SecuraFolder's license.
+///
+/// It takes an email address as a command-line argument, generates a license key
+/// using the provided `LicenseManager`, and then prints the generated key.
+///
+/// # Usage
+/// To run the program, provide an email address as a command-line argument:
+/// ```sh
+/// cargo run <email_address>
+/// ```
+///
+use securafolder::license;
 use std::env;
 
 fn main() {

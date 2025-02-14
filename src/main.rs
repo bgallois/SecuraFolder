@@ -1,5 +1,20 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+/// This program provides a user interface for encrypting and decrypting files using a password.
+/// The application interacts with the user via a UI, processes folder encryption/decryption,
+/// and handles license verification for larger file support.
+///
+/// # Features
+/// - Encrypts and decrypts a folder of files.
+/// - Verifies if a user has a valid license for larger folders.
+/// - Displays progress and error messages during the encryption/decryption process.
+/// - Locks and unlocks the UI based on the encryption state.
+///
+/// # Usage
+/// 1. The program initializes by checking if the "Secura" folder exists. If it doesn't, it creates it.
+/// 2. On submission, the program either encrypts or decrypts the folder depending on its current state.
+/// 3. Progress is displayed on the UI in real-time, and the UI is locked during the encryption/decryption process.
+/// 4. The program ensures that a valid license is in place for larger folders before proceeding with encryption.
 use securafolder::encryption;
 use std::{env, error::Error, fs, path::PathBuf, sync::mpsc, thread};
 #[cfg(feature = "limited")]
@@ -64,6 +79,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Initializes the "Secura" folder and sets the encryption state on the UI.
+///
+/// - If the folder doesn't exist, it is created, and the encryption state is set to false (not encrypted).
+/// - If the folder already exists, the encryption state is set to true (encrypted).
+/// - If an error occurs while creating the folder, the encryption state is set to false, and the error is returned.
+///
+/// # Parameters
+/// - `ui`: The user interface instance to update the encryption state.
+/// - `path`: The path of the folder to check/create.
 fn init(ui: &AppWindow, path: PathBuf) -> Result<(), Box<dyn Error>> {
     match fs::create_dir(path) {
         Ok(()) => {
@@ -81,6 +105,17 @@ fn init(ui: &AppWindow, path: PathBuf) -> Result<(), Box<dyn Error>> {
     }
 }
 
+/// Processes folder encryption or decryption based on the specified operation.
+///
+/// This function handles license validation, ensures the folder's size does not exceed free limits,
+/// and performs encryption or decryption in a separate thread. Progress is sent to the UI, and
+/// the UI is locked during processing.
+///
+/// # Parameters
+/// - `ui`: Weak reference to the user interface for progress and state updates.
+/// - `path`: The path to the folder being processed.
+/// - `password`: The password used for encryption or decryption.
+/// - `operation`: The encryption or decryption operation to perform.
 fn process(
     ui: slint::Weak<AppWindow>,
     path: PathBuf,
